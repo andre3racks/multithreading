@@ -3,6 +3,7 @@
 #include<stdlib.h>
 #include<string.h>
 #include<stdbool.h>
+#include <pthread.h>
 
 typedef struct {
 	int number;
@@ -13,6 +14,9 @@ typedef struct {
 	struct train* next;
 
 } train;
+
+train* hp_queue = NULL;
+train* lp_queue = NULL;
 
 train* create_train(int num, char dir, bool h, float ld, float cross)	{
 	train* new = (train*) malloc(sizeof(train));
@@ -93,7 +97,13 @@ train* insert_at_end(train* head, train* t)	{
 	return head;
 }
 
-void file_handler(char* path)	{
+void* load_train(void* param)	{
+	train* list = (train*) param;
+	print_queue(list);
+
+}
+
+train* file_handler(char* path)	{
 
 	FILE *file = fopen(path, "r");
 
@@ -110,31 +120,23 @@ void file_handler(char* path)	{
 	float ld;
 	float cross;
 	bool prior = false;
-	train* head = NULL;
-	train* last = NULL;
+	train* train_list = NULL;
 
 	int flag = 1;
 
 
 	while(fscanf(file, "%c %f %f\n", &direction, &ld, &cross) != EOF)	{
 		//tokenize line
-		ld /= 10;
-		cross /= 10;
 
 		//printf("%c %f %f\n",direction, ld, cross );
 		prior = isupper(direction);
 		train* new = create_train(num++, tolower(direction), prior, ld, cross);
-		last = new;
-		head = insert_at_end(head, new );
+		train_list = insert_at_end(train_list, new );
 
 	}
-	printf("before removal\n");
-	print_queue(head);
-	head = remove_element(head, last);
-	printf("after removal\n");
-	print_queue(head);
 
 	free(line);
+	return train_list;
 
 }
 
@@ -145,7 +147,8 @@ int main(int argc, char* argv[])	{
 		exit(0);
 	}
 
-	file_handler(argv[1]);
+	train* t_list = file_handler(argv[1]);
+	load_train(t_list);
 
 	return 0;
 
