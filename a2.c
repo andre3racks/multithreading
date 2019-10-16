@@ -42,6 +42,39 @@ void print_queue(train* head)	{
 	}
 }
 
+train* remove_element(train* head, train* t)	{
+	
+	//case empty
+	if(head == NULL)
+		return NULL;
+
+	//case multiple elements
+	train* curr = head;
+	train* prev = NULL;
+
+	while(curr!=NULL)	{
+		if(curr == t)	{
+
+			if(prev !=NULL)	{			
+				prev->next = curr->next;
+				free(curr);
+				return head;
+			}
+
+			else	{
+				head = head->next;
+				free(curr);
+				return head;
+			}
+		}	
+
+		prev = curr;
+		curr = curr->next;
+	}
+	printf("element not found in remove.\n");
+	return NULL;
+}
+
 train* insert_at_end(train* head, train* t)	{
 	train* curr = head;
 	//printf("inserting..\n");
@@ -78,6 +111,7 @@ void file_handler(char* path)	{
 	float cross;
 	bool prior = false;
 	train* head = NULL;
+	train* last = NULL;
 
 	int flag = 1;
 
@@ -89,10 +123,15 @@ void file_handler(char* path)	{
 
 		//printf("%c %f %f\n",direction, ld, cross );
 		prior = isupper(direction);
-		head = insert_at_end(head, create_train(num++, tolower(direction), prior, ld, cross));
+		train* new = create_train(num++, tolower(direction), prior, ld, cross);
+		last = new;
+		head = insert_at_end(head, new );
 
 	}
-
+	printf("before removal\n");
+	print_queue(head);
+	head = remove_element(head, last);
+	printf("after removal\n");
 	print_queue(head);
 
 	free(line);
