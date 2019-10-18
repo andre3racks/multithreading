@@ -5,6 +5,7 @@
 #include<stdbool.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <time.h>
 
 typedef struct {
 	int number;
@@ -23,6 +24,8 @@ pthread_mutex_t track;
 pthread_cond_t track_status;
 pthread_cond_t nonempty_train_list;
 pthread_cond_t start_loading;
+int num_trains = 0;
+
 
 
 void mutex_init()	{
@@ -51,6 +54,10 @@ train* create_train(int num, char dir, bool h, float ld, float cross)	{
 
 	return new;
 
+}
+
+bool isEmpty(train* head)	{
+	return head == NULL;
 }
 
 void print_queue(train* head)	{
@@ -123,15 +130,24 @@ void* load_train(void* param)	{
 	pthread_mutex_unlock(&queues);
 	pthread_cond_broadcast(&start_loading);
 
-	printf("loading train:  %d\n", t->number );
+	//printf("loading train:  %d\n", t->number );
 	if(usleep(t->loading_time*100000) == -1)	{
 		fprintf(stderr, "usleep failed in load_train().\n");
 	}
-	printf("train %d loaded.\n", t->number );
+
+	char* direction;
+
+	if(t->direction == 'e')	
+		direction = "East";
+	else
+		direction = "West";
+	
+
+	printf("Train %2d is ready to go %4s\n", t->number , direction );
 
 	pthread_mutex_lock(&queues);
 
-	printf("inserting\n");
+	//printf("inserting\n");
 
 	if(t->high_priority)
 		hp_queue = insert_at_end(hp_queue, create_train(t->number, t->direction, t->high_priority, t->loading_time, t->crossing_time));
@@ -139,7 +155,37 @@ void* load_train(void* param)	{
 		lp_queue = insert_at_end(lp_queue, create_train(t->number, t->direction, t->high_priority, t->loading_time, t->crossing_time));
 
 	//unlock mutex?
+	pthread_cond_signal(&nonempty_train_list);
 	pthread_mutex_unlock(&queues);
+
+}
+
+void* run_train(void* param)	{
+	
+	train* t = (train*) param;
+
+	pthread_mutex_lock(&track);
+	//pthread_cond_wait(&track_status, &track);
+
+	char* direction;
+
+	if(t->direction == 'e')	
+		direction = "East";
+	else
+		direction = "West";
+
+	printf("Train %2d is ON the main track going %4s\n", t->number, direction );
+
+	if(usleep(t->crossing_time*100000) == -1)	{
+		fprintf(stderr, "usleep failed in run_train().\n");
+	}
+
+
+	printf("Train %2d is OFF the main track after going %4s\n",t->number, direction );
+	num_trains--;
+	//pthread_cond_signal(&track_status);
+	pthread_mutex_unlock(&track);
+
 
 }
 
@@ -175,6 +221,8 @@ train* file_handler(char* path)	{
 
 	}
 
+	num_trains = num;
+
 	free(line);
 	return train_list;
 
@@ -203,9 +251,28 @@ int main(int argc, char* argv[])	{
 		curr = curr->next;
 	}
 
+
 	pthread_cond_broadcast(&start_loading);
 
-	usleep(4000000);
+	while(num_trains>0)	{
+
+		pthread_mutex_lock(&queues);
+		while(isEmpty(lp_queue) && isEmpty(hp_queue) && num_trains>0)	{
+			pthread_cond_wait(&nonempty_train_list, &queues);
+		}
+
+		pthread_t id1, id2;
+		if(!isEmpty(lp_queue))
+		lp_queue = pthread_create(&id1, NULL, run_train, lp_queue);
+		if(!isEmpty(hp_queue))
+		hp_queue = pthread_create(&id1, NULL, run_train, hp_queue);
+
+		pthread_mutex_unlock(&queues);
+
+
+	}
+
+	// usleep(2000000);
 
 	printf("printing hp_queue\n");
 	print_queue(hp_queue);
