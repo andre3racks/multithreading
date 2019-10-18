@@ -4,6 +4,7 @@
 #include<string.h>
 #include<stdbool.h>
 #include <pthread.h>
+#include <unistd.h>
 
 typedef struct {
 	int number;
@@ -90,6 +91,7 @@ train* insert_at_end(train* head, train* t)	{
 
 	while(curr->next != NULL)	{
 		curr = curr->next;
+		//printf("while\n");
 	}
 
 	curr->next = t;
@@ -98,9 +100,22 @@ train* insert_at_end(train* head, train* t)	{
 }
 
 void* load_train(void* param)	{
-	train* list = (train*) param;
-	print_queue(list);
+	
+	train* t = (train*) param;
+	printf("loading train:  %d\n", t->number );
+	if(usleep(t->loading_time*100000) == -1)	{
+		fprintf(stderr, "usleep failed in load_train().\n");
+	}
+	printf("train %d loaded.\n", t->number );
+	train* next = t->next;
+	t->next = NULL;
 
+	if(t->high_priority)
+		hp_queue = insert_at_end(hp_queue, t);
+	else
+		lp_queue = insert_at_end(lp_queue, t);
+
+	return next;
 }
 
 train* file_handler(char* path)	{
@@ -148,7 +163,17 @@ int main(int argc, char* argv[])	{
 	}
 
 	train* t_list = file_handler(argv[1]);
-	load_train(t_list);
+
+	printf("train list:\n");
+	print_queue(t_list);
+	
+	while(t_list != NULL)	{
+		t_list = load_train(t_list);
+	}
+	printf("printing hp_queue\n");
+	print_queue(hp_queue);
+	printf("printing lp queue\n");
+	print_queue(lp_queue);
 
 	return 0;
 
