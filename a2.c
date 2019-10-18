@@ -186,6 +186,9 @@ void* run_train(void* param)	{
 	//pthread_cond_signal(&track_status);
 	pthread_mutex_unlock(&track);
 
+	if(num_trains==0)
+		pthread_cond_signal(&nonempty_train_list);
+
 
 }
 
