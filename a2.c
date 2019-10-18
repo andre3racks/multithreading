@@ -24,8 +24,10 @@ pthread_mutex_t track;
 pthread_cond_t track_status;
 pthread_cond_t nonempty_train_list;
 pthread_cond_t start_loading;
+pthread_cond_t done_with_Qs;
 int num_trains = 0;
-
+bool queues_in_use = false;
+bool on_track = false;
 
 
 void mutex_init()	{
@@ -34,6 +36,7 @@ void mutex_init()	{
 	pthread_cond_init(&track_status, NULL);
 	pthread_cond_init(&nonempty_train_list, NULL);
 	pthread_cond_init(&start_loading, NULL);
+	pthread_cond_init(&done_with_Qs, NULL);
 }
 
 
@@ -146,8 +149,11 @@ void* load_train(void* param)	{
 	printf("Train %2d is ready to go %4s\n", t->number , direction );
 
 	pthread_mutex_lock(&queues);
-
+	
+	while(queues_in_use)
+		pthread_cond_wait(&done_with_Qs, &queues);
 	//printf("inserting\n");
+	queues_in_use = true;
 
 	if(t->high_priority)
 		hp_queue = insert_at_end(hp_queue, create_train(t->number, t->direction, t->high_priority, t->loading_time, t->crossing_time));
@@ -155,6 +161,8 @@ void* load_train(void* param)	{
 		lp_queue = insert_at_end(lp_queue, create_train(t->number, t->direction, t->high_priority, t->loading_time, t->crossing_time));
 
 	//unlock mutex?
+	queues_in_use = false;
+	pthread_cond_signal(&done_with_Qs);
 	pthread_cond_signal(&nonempty_train_list);
 	pthread_mutex_unlock(&queues);
 
@@ -165,7 +173,11 @@ void* run_train(void* param)	{
 	train* t = (train*) param;
 
 	pthread_mutex_lock(&track);
-	//pthread_cond_wait(&track_status, &track);
+	
+	while(on_track)
+		pthread_cond_wait(&track_status, &track);
+
+	on_track = true;
 
 	char* direction;
 
@@ -183,7 +195,9 @@ void* run_train(void* param)	{
 
 	printf("Train %2d is OFF the main track after going %4s\n",t->number, direction );
 	num_trains--;
-	//pthread_cond_signal(&track_status);
+
+	on_track = false;
+	pthread_cond_signal(&track_status);
 	pthread_mutex_unlock(&track);
 
 	if(num_trains==0)
