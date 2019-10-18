@@ -18,6 +18,21 @@ typedef struct {
 
 train* hp_queue = NULL;
 train* lp_queue = NULL;
+pthread_mutex_t queues;
+pthread_mutex_t track;
+pthread_cond_t track_status;
+pthread_cond_t nonempty_train_list;
+pthread_cond_t start_loading;
+
+
+void mutex_init()	{
+	pthread_mutex_init(&queues, NULL);
+	pthread_mutex_init(&track, NULL);
+	pthread_cond_init(&track_status, NULL);
+	pthread_cond_init(&nonempty_train_list, NULL);
+	pthread_cond_init(&start_loading, NULL);
+}
+
 
 train* create_train(int num, char dir, bool h, float ld, float cross)	{
 	train* new = (train*) malloc(sizeof(train));
@@ -100,22 +115,32 @@ train* insert_at_end(train* head, train* t)	{
 }
 
 void* load_train(void* param)	{
-	
+
 	train* t = (train*) param;
+
+	pthread_mutex_lock(&queues);
+	pthread_cond_wait(&start_loading, &queues);
+	pthread_mutex_unlock(&queues);
+	pthread_cond_broadcast(&start_loading);
+
 	printf("loading train:  %d\n", t->number );
 	if(usleep(t->loading_time*100000) == -1)	{
 		fprintf(stderr, "usleep failed in load_train().\n");
 	}
 	printf("train %d loaded.\n", t->number );
-	train* next = t->next;
-	t->next = NULL;
+
+	pthread_mutex_lock(&queues);
+
+	printf("inserting\n");
 
 	if(t->high_priority)
-		hp_queue = insert_at_end(hp_queue, t);
+		hp_queue = insert_at_end(hp_queue, create_train(t->number, t->direction, t->high_priority, t->loading_time, t->crossing_time));
 	else
-		lp_queue = insert_at_end(lp_queue, t);
+		lp_queue = insert_at_end(lp_queue, create_train(t->number, t->direction, t->high_priority, t->loading_time, t->crossing_time));
 
-	return next;
+	//unlock mutex?
+	pthread_mutex_unlock(&queues);
+
 }
 
 train* file_handler(char* path)	{
@@ -157,6 +182,8 @@ train* file_handler(char* path)	{
 
 int main(int argc, char* argv[])	{
 
+	mutex_init();
+
 	if(argc != 2)	{
 		printf("Expected 2 argument.\n");
 		exit(0);
@@ -166,10 +193,20 @@ int main(int argc, char* argv[])	{
 
 	printf("train list:\n");
 	print_queue(t_list);
+
+	train* curr = t_list;
 	
-	while(t_list != NULL)	{
-		t_list = load_train(t_list);
+	while(curr != NULL)	{
+		pthread_t id;
+		pthread_create(&id, NULL, load_train, curr);
+		//load_train(curr);
+		curr = curr->next;
 	}
+
+	pthread_cond_broadcast(&start_loading);
+
+	usleep(4000000);
+
 	printf("printing hp_queue\n");
 	print_queue(hp_queue);
 	printf("printing lp queue\n");
