@@ -17,6 +17,10 @@ typedef struct {
 
 } train;
 
+struct timespec start, stop; 
+
+#define BILLION 1000000000.0; 
+
 train* hp_queue = NULL;
 train* lp_queue = NULL;
 pthread_mutex_t queues;
@@ -39,6 +43,20 @@ void mutex_init()	{
 	pthread_cond_init(&done_with_Qs, NULL);
 }
 
+void print_time()	{
+
+	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) {      
+		perror( "clock gettime" );      
+		exit( EXIT_FAILURE );    
+	} 
+
+	double total_seconds = ( stop.tv_sec - start.tv_sec ) + ( stop.tv_nsec - start.tv_nsec )/ BILLION;
+	int hours = 0;
+	int minutes = 0;
+
+	printf("%02d:%02d:%04.1f ", hours, minutes, total_seconds);
+
+}
 
 train* create_train(int num, char dir, bool h, float ld, float cross)	{
 	train* new = (train*) malloc(sizeof(train));
@@ -87,13 +105,13 @@ train* remove_element(train* head, train* t)	{
 
 			if(prev !=NULL)	{			
 				prev->next = curr->next;
-				free(curr);
+				//free(curr);
 				return head;
 			}
 
 			else	{
 				head = head->next;
-				free(curr);
+				//free(curr);
 				return head;
 			}
 		}	
@@ -145,7 +163,7 @@ void* load_train(void* param)	{
 	else
 		direction = "West";
 	
-
+	print_time();
 	printf("Train %2d is ready to go %4s\n", t->number , direction );
 
 	pthread_mutex_lock(&queues);
@@ -186,15 +204,18 @@ void* run_train(void* param)	{
 	else
 		direction = "West";
 
+	print_time();
 	printf("Train %2d is ON the main track going %4s\n", t->number, direction );
 
 	if(usleep(t->crossing_time*100000) == -1)	{
 		fprintf(stderr, "usleep failed in run_train().\n");
 	}
 
-
+	print_time();
 	printf("Train %2d is OFF the main track after going %4s\n",t->number, direction );
 	num_trains--;
+
+	free(t);
 
 	on_track = false;
 	pthread_cond_signal(&track_status);
@@ -245,6 +266,141 @@ train* file_handler(char* path)	{
 
 }
 
+train* find_next(train* head, char last_train_direction)	{
+
+	if(isEmpty(head))
+		return NULL;
+
+	int least_L_time_e = 2147483647;
+	int least_L_time_w = 2147483647;
+	int lowest_train_num_e = 2147483647;
+	int lowest_train_num_w = 2147483647;
+	train* curr = head;
+	train* eastbound = NULL;
+	train* westbound = NULL;
+
+	while(curr != NULL)	{
+
+		if(curr->direction == 'e')	{
+			if(curr->loading_time <= least_L_time_e && curr->number < lowest_train_num_e)	{
+				lowest_train_num_e = curr->number;
+				least_L_time_e = curr->loading_time;
+				eastbound = curr;
+			}
+		}
+
+		else if(curr->direction == 'w')	{
+			if(curr->loading_time <= least_L_time_w && curr->number < lowest_train_num_w)	{
+				lowest_train_num_w = curr->number;
+				least_L_time_w = curr->loading_time;
+				westbound = curr;
+			}
+		}
+
+		else 	{
+			fprintf(stderr, "unexpected direction in find_next()\n" );
+		}
+
+		curr = curr->next; 
+	
+	}
+
+	// no we have highest priority trains for each direction
+
+	//if there loading times are the same, we send the opposite direction as last train
+	//otherwise, send the least loading time;
+
+	if(eastbound != NULL && westbound != NULL)	{
+
+		if(eastbound->loading_time == westbound->loading_time)	{
+			if(last_train_direction == "e")
+				return westbound;
+			else
+				return eastbound;
+		}
+
+		if(eastbound->loading_time<westbound->loading_time)
+			return eastbound;
+		else
+			return westbound;
+	}
+
+	if(eastbound == NULL)
+			return westbound;
+	else
+		return eastbound;
+
+	fprintf(stderr, "No train found in nonempty list, find_next().\n");
+	return NULL;
+	
+
+}
+
+train* starvation(train* hp, train* lp, char last_train_direction)	{
+
+
+	if(isEmpty(hp) && isEmpty(lp))
+		return NULL;
+
+	int least_L_time = 2147483647;
+	int lowest_train_num = 2147483647;
+	train* curr = hp;
+	train* next = NULL;
+
+	char direction;
+
+	if(last_train_direction == "e")
+		direction = "w";
+	else
+		direction = "e";
+
+	//HP iteration
+	while(curr != NULL)	{
+
+		if(curr->direction == direction)	{
+			if(curr->loading_time <= least_L_time && curr->number < lowest_train_num)	{
+				least_L_time = curr->loading_time;
+				lowest_train_num = curr->number;
+				next = curr;
+			}
+		}
+	}
+
+	if(next != NULL)
+		return next;
+
+	curr = lp;
+	//LP iteration
+	while(curr != NULL)	{
+
+		if(curr->direction == direction)	{
+			if(curr->loading_time <= least_L_time && curr->number < lowest_train_num)	{
+				least_L_time = curr->loading_time;
+				lowest_train_num = curr->number;
+				next = curr;
+			}
+		}
+	}
+
+	if(next != NULL)
+		return next;
+
+	next = find_next(hp, last_train_direction);
+
+	if(next != NULL)
+		return next;
+
+	next = find_next(lp, last_train_direction);
+
+	if(next != NULL)
+		return next;
+
+	fprintf(stderr, "starvation failed to find any trains.\n" );
+
+	return NULL;
+
+}
+
 int main(int argc, char* argv[])	{
 
 	mutex_init();
@@ -256,8 +412,8 @@ int main(int argc, char* argv[])	{
 
 	train* t_list = file_handler(argv[1]);
 
-	printf("train list:\n");
-	print_queue(t_list);
+	//printf("train list:\n");
+	//print_queue(t_list);
 
 	train* curr = t_list;
 	
@@ -268,8 +424,19 @@ int main(int argc, char* argv[])	{
 		curr = curr->next;
 	}
 
+	usleep(1000000);
 
 	pthread_cond_broadcast(&start_loading);
+
+	//start time
+	if( clock_gettime( CLOCK_REALTIME, &start) == -1 ) {      
+		perror( "clock gettime" );      
+		exit( EXIT_FAILURE );    
+	}
+
+	int starv = 0;
+	char last_train_direction = "w";  
+	train* next_train = NULL;
 
 	while(num_trains>0)	{
 
@@ -278,17 +445,59 @@ int main(int argc, char* argv[])	{
 			pthread_cond_wait(&nonempty_train_list, &queues);
 		}
 
-		pthread_t id1, id2;
-		if(!isEmpty(lp_queue))
-		lp_queue = pthread_create(&id1, NULL, run_train, lp_queue);
-		if(!isEmpty(hp_queue))
-		hp_queue = pthread_create(&id1, NULL, run_train, hp_queue);
+		if(num_trains == 0)
+			break;
+		//starvation check
+
+		pthread_t id1;
+
+		next_train = NULL;
+
+		// if(starv >= 3)	{
+		// 	next_train = starvation(hp_queue, lp_queue, last_train_direction);
+		// 	pthread_create(&id1, NULL, run_train, next_train);
+		// 	//remove train?
+		// 	continue;
+		// }
+
+		//hp check
+		if(!isEmpty(hp_queue))	{
+			next_train = find_next(hp_queue, last_train_direction);
+			//remove train?
+			if(next_train != NULL)
+				hp_queue = remove_element(hp_queue, next_train);
+		}
+		//if no hp, lp check
+		//lp
+		else if(!isEmpty(lp_queue))	{
+			next_train = find_next(lp_queue, last_train_direction);
+			//remove train?
+			if(next_train != NULL)
+				lp_queue = remove_element(lp_queue, next_train);
+		}
+
+		if(next_train == NULL)	{
+			fprintf(stderr, "next_train is NULL in main, exiting.\n" );
+			return 1;
+		}
+
+		//printf("train selected is: %d\n", next_train->number );
+
+		pthread_create(&id1, NULL, run_train, next_train);
+
+
+		//old logic
+		// if(!isEmpty(hp_queue))
+		// hp_queue = pthread_create(&id1, NULL, run_train, hp_queue);
+		// if(!isEmpty(lp_queue))
+		// lp_queue = pthread_create(&id1, NULL, run_train, lp_queue);
 
 		pthread_mutex_unlock(&queues);
 
 
 	}
 
+	
 	// usleep(2000000);
 
 	printf("printing hp_queue\n");
