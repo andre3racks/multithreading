@@ -214,7 +214,7 @@ void* run_train(void* param)	{
 	printf("Train %2d is OFF the main track after going %4s\n",t->number, direction );
 	num_trains--;
 
-	free(t);
+	//free(t);
 
 	on_track = false;
 	pthread_mutex_unlock(&track);
@@ -350,10 +350,10 @@ train* starvation(train* hp, train* lp, char last_train_direction)	{
 
 	char direction;
 
-	if(last_train_direction == "e")
-		direction = "w";
+	if(last_train_direction == 'e')
+		direction = 'w';
 	else
-		direction = "e";
+		direction = 'e';
 
 	//HP iteration
 	while(curr != NULL)	{
@@ -365,6 +365,8 @@ train* starvation(train* hp, train* lp, char last_train_direction)	{
 				next = curr;
 			}
 		}
+
+		curr = curr->next;
 	}
 
 	if(next != NULL)
@@ -381,6 +383,7 @@ train* starvation(train* hp, train* lp, char last_train_direction)	{
 				next = curr;
 			}
 		}
+		curr = curr->next;
 	}
 
 	if(next != NULL)
@@ -454,8 +457,28 @@ int main(int argc, char* argv[])	{
 		if(num_trains == 0)
 			break;
 
-		
+		if(next_train != NULL)
+			last_train_direction = next_train->direction;
+
 		next_train = NULL;
+
+		if(starv >= 2)	{
+			printf("starvation called !\n");
+			next_train = starvation(hp_queue, lp_queue, last_train_direction);
+
+			if(next_train->direction != last_train_direction)
+				starv = 0;
+
+			if(next_train->high_priority)
+				hp_queue = remove_element(hp_queue, next_train);
+			else
+				lp_queue = remove_element(lp_queue, next_train);
+
+			pthread_create(&id1, NULL, run_train, next_train);
+			pthread_mutex_unlock(&queues);
+			pthread_join(id1, NULL);
+			continue;
+		}
 
 		//hp check
 		if(!isEmpty(hp_queue))	{
@@ -463,6 +486,10 @@ int main(int argc, char* argv[])	{
 			//remove train?
 			if(next_train != NULL)	{
 				hp_queue = remove_element(hp_queue, next_train);
+				if(next_train->direction == last_train_direction)
+					starv++;
+				else
+					starv = 0;
 			}
 
 		}
@@ -471,8 +498,13 @@ int main(int argc, char* argv[])	{
 		else if(!isEmpty(lp_queue))	{
 			next_train = find_next(lp_queue, last_train_direction);
 			//remove train?
-			if(next_train != NULL)
+			if(next_train != NULL)	{
 				lp_queue = remove_element(lp_queue, next_train);
+				if(next_train->direction == last_train_direction)
+					starv++;
+				else
+					starv = 0;
+			}
 		}
 
 		if(next_train == NULL)	{
@@ -480,7 +512,13 @@ int main(int argc, char* argv[])	{
 			return 1;
 		}
 
-		printf("train selected is: %d\n", next_train->number );
+		// printf("train selected is: %d\n", next_train->number );
+
+		// printf("starvation is: %d\n", starv);
+
+		// printf("last train: %c\n", last_train_direction);
+
+		// printf("next train: %c\n", next_train->direction);
 
 		pthread_create(&id1, NULL, run_train, next_train);
 
