@@ -54,6 +54,16 @@ void print_time()	{
 	int hours = 0;
 	int minutes = 0;
 
+	while(total_seconds>=3600)	{
+		hours++;
+		total_seconds-=3600;
+	}	
+
+	while(total_seconds>60)	{
+		minutes++;
+		total_seconds-=60;
+	}
+
 	printf("%02d:%02d:%04.1f ", hours, minutes, total_seconds);
 
 }
@@ -147,6 +157,7 @@ void* load_train(void* param)	{
 	train* t = (train*) param;
 
 	pthread_mutex_lock(&queues);
+	
 	pthread_cond_wait(&start_loading, &queues);
 	pthread_mutex_unlock(&queues);
 	pthread_cond_broadcast(&start_loading);
@@ -162,11 +173,13 @@ void* load_train(void* param)	{
 		direction = "East";
 	else
 		direction = "West";
+
+	pthread_mutex_lock(&queues);
 	
 	print_time();
 	printf("Train %2d is ready to go %4s\n", t->number , direction );
 
-	pthread_mutex_lock(&queues);
+	
 	
 	while(queues_in_use)
 		pthread_cond_wait(&done_with_Qs, &queues);
@@ -428,7 +441,7 @@ int main(int argc, char* argv[])	{
 		curr = curr->next;
 	}
 
-	usleep(1000000);
+	//usleep(1000000);
 	usleep(2000000);
 
 	pthread_cond_broadcast(&start_loading);
@@ -443,6 +456,7 @@ int main(int argc, char* argv[])	{
 	int starv = 0;
 	char last_train_direction = "n";
 	train* next_train = NULL;
+	train* prev_train = NULL;
 
 	pthread_t id1;
 
@@ -460,6 +474,7 @@ int main(int argc, char* argv[])	{
 		if(next_train != NULL)
 			last_train_direction = next_train->direction;
 
+		prev_train = next_train;
 		next_train = NULL;
 
 		if(starv >= 2)	{
@@ -468,6 +483,11 @@ int main(int argc, char* argv[])	{
 
 			if(next_train->direction != last_train_direction)
 				starv = 0;
+			else
+				starv++;
+
+			if(prev_train != NULL)
+				free(prev_train);
 
 			if(next_train->high_priority)
 				hp_queue = remove_element(hp_queue, next_train);
@@ -490,6 +510,9 @@ int main(int argc, char* argv[])	{
 					starv++;
 				else
 					starv = 0;
+
+				if(prev_train != NULL)
+					free(prev_train);
 			}
 
 		}
@@ -504,6 +527,9 @@ int main(int argc, char* argv[])	{
 					starv++;
 				else
 					starv = 0;
+
+				if(prev_train != NULL)
+					free(prev_train);
 			}
 		}
 
@@ -528,10 +554,10 @@ int main(int argc, char* argv[])	{
 	}
 
 
-	printf("printing hp_queue\n");
-	print_queue(hp_queue);
-	printf("printing lp queue\n");
-	print_queue(lp_queue);
+	// printf("printing hp_queue\n");
+	// print_queue(hp_queue);
+	// printf("printing lp queue\n");
+	// print_queue(lp_queue);
 
 	return 0;
 
